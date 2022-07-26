@@ -47,5 +47,3 @@ gcloud_test:
   image: simbu1290/cloudshell:v1
   script:
     - <<RUN YOUR GCLOUD COMMANDS HERE>>
-  variables:
-    IMPERSONATE_SERVICE_ACCOUNT: cloud-demo-app-test-sa@rightmove-sandbox.iam.gserviceaccount.com
