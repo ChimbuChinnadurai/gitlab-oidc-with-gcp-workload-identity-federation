@@ -1,0 +1,51 @@
+variables:
+  GCP_WORKLOAD_IDENTITY_PROVIDER: "projects/436664607055/locations/global/workloadIdentityPools/gitlab-pool-4eeb7a7e/providers/gitlab-jwt-4eeb7a7e"
+  SERVICE_ACCOUNT_EMAIL: gitlab-runner-service-account@rightmove-sandbox.iam.gserviceaccount.com
+
+stages:
+  - test
+
+.gcp_auth: &gcp_auth
+  before_script:
+    - echo ${CI_JOB_JWT_V2} > .ci_job_jwt_file
+    - gcloud iam workload-identity-pools create-cred-config ${GCP_WORKLOAD_IDENTITY_PROVIDER}
+      --service-account="${GCP_SERVICE_ACCOUNT}"
+      --output-file=.gcp_temp_cred.json
+      --credential-source-file=.ci_job_jwt_file
+    - gcloud auth login --cred-file=`pwd`/.gcp_temp_cred.json
+    - |
+      PAYLOAD=$(cat <<EOF
+      {
+      "audience": "//iam.googleapis.com/${GCP_WORKLOAD_IDENTITY_PROVIDER}",
+      "grantType": "urn:ietf:params:oauth:grant-type:token-exchange",
+      "requestedTokenType": "urn:ietf:params:oauth:token-type:access_token",
+      "scope": "https://www.googleapis.com/auth/cloud-platform",
+      "subjectTokenType": "urn:ietf:params:oauth:token-type:jwt",
+      "subjectToken": "${CI_JOB_JWT_V2}"
+      }
+      EOF
+      )
+    - |
+      FEDERATED_TOKEN=$(curl -s -X POST "https://sts.googleapis.com/v1/token" \
+      --header "Accept: application/json" \
+      --header "Content-Type: application/json" \
+      --data "${PAYLOAD}" \
+      | jq -r '.access_token'
+      )
+    - |
+      export CLOUDSDK_AUTH_ACCESS_TOKEN=$(curl -s -X POST "https://iamcredentials.googleapis.com/v1/projects/-/serviceAccounts/${SERVICE_ACCOUNT_EMAIL}:generateAccessToken" \
+      --header "Accept: application/json" \
+      --header "Content-Type: application/json" \
+      --header "Authorization: Bearer ${FEDERATED_TOKEN}" \
+      --data '{"scope": ["https://www.googleapis.com/auth/cloud-platform"]}' \
+      | jq -r '.accessToken'
+      )
+
+gcloud_test:
+  <<: *gcp_auth
+  stage: terraform
+  image: simbu1290/cloudshell:v1
+  script:
+    - <<RUN YOUR GCLOUD COMMANDS HERE>>
+  variables:
+    IMPERSONATE_SERVICE_ACCOUNT: cloud-demo-app-test-sa@rightmove-sandbox.iam.gserviceaccount.com
