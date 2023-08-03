@@ -1,18 +1,17 @@
 variables:
-  GCP_WORKLOAD_IDENTITY_PROVIDER: "projects/436664607055/locations/global/workloadIdentityPools/gitlab-pool-4eeb7a7e/providers/gitlab-jwt-4eeb7a7e"
-  SERVICE_ACCOUNT_EMAIL: gitlab-runner-service-account@rightmove-sandbox.iam.gserviceaccount.com
+  GCP_PROJECT_NAME: "chimbuc-playground"
+  GCP_WORKLOAD_IDENTITY_PROVIDER: "projects/269684357132/locations/global/workloadIdentityPools/gitlab-demo-wip/providers/gitlab"
+  SERVICE_ACCOUNT_EMAIL: "gitlab-wif-demo@chimbuc-playground.iam.gserviceaccount.com"
 
 stages:
-  - test
+  - gcp_wif_demo
 
-.gcp_auth: &gcp_auth
+.gcp_wif_auth: &gcp_wif_auth
+  id_tokens:
+    GITLAB_OIDC_TOKEN:
+      aud: https://gitlab.com
   before_script:
-    - echo ${CI_JOB_JWT_V2} > .ci_job_jwt_file
-    - gcloud iam workload-identity-pools create-cred-config ${GCP_WORKLOAD_IDENTITY_PROVIDER}
-      --service-account="${SERVICE_ACCOUNT_EMAIL}"
-      --output-file=.gcp_temp_cred.json
-      --credential-source-file=.ci_job_jwt_file
-    - gcloud auth login --cred-file=`pwd`/.gcp_temp_cred.json
+    - apt-get update && apt-get install -yq jq
     - |
       PAYLOAD=$(cat <<EOF
       {
@@ -21,7 +20,7 @@ stages:
       "requestedTokenType": "urn:ietf:params:oauth:token-type:access_token",
       "scope": "https://www.googleapis.com/auth/cloud-platform",
       "subjectTokenType": "urn:ietf:params:oauth:token-type:jwt",
-      "subjectToken": "${CI_JOB_JWT_V2}"
+      "subjectToken": "${GITLAB_OIDC_TOKEN}"
       }
       EOF
       )
@@ -42,8 +41,9 @@ stages:
       )
 
 gcloud_test:
-  <<: *gcp_auth
-  stage: terraform
-  image: simbu1290/cloudshell:v1
+  <<: *gcp_wif_auth
+  stage: gcp_wif_demo
+  image: gcr.io/google.com/cloudsdktool/google-cloud-cli:441.0.0
   script:
-    - <<RUN YOUR GCLOUD COMMANDS HERE>>
+    - gcloud config set project ${GCP_PROJECT_NAME}
+    - gcloud storage ls
